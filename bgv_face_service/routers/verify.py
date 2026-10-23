@@ -1,10 +1,13 @@
-from fastapi import APIRouter, HTTPException
+import numpy as np
+import cv2
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from schemas import VerifyRequest
 from services.image_loader import load_image_from_url
 from services.matcher import get_embedding, score_pair, zone
 
 router = APIRouter()
 MAX_CANDIDATES = 15
+MAX_BYTES = 5_000_000
 
 
 @router.post("/verify")
@@ -42,3 +45,30 @@ def verify(req: VerifyRequest):
                         "score": round(s, 3), "zone": z})
 
     return {"results": results}
+
+
+def _read_upload(f: UploadFile):
+    data = f.file.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        raise HTTPException(status_code=400, detail="file bahut badi hai")
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise HTTPException(status_code=400, detail="ye image nahi hai")
+    return img
+
+
+@router.post("/verify-upload")
+def verify_upload(reference_url: str = Form(...), candidate: UploadFile = File(...)):
+    try:
+        ref_img = load_image_from_url(reference_url)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"reference photo: {e}")
+    cand_img = _read_upload(candidate)
+
+    a, na = get_embedding(ref_img)
+    b, nb = get_embedding(cand_img)
+    if a is None or b is None:
+        return {"status": "no_face", "faces": [na, nb]}
+
+    s = score_pair(a, b)
+    return {"status": "ok", "faces": [na, nb], "score": round(s, 3), "zone": zone(s)}

@@ -1,5 +1,7 @@
 from pathlib import Path
+
 import cv2
+import numpy as np
 
 MODELS = Path(__file__).resolve().parent.parent / "models"
 
@@ -18,7 +20,8 @@ def get_embedding(img):
     _, faces = detector.detect(img)
     if faces is None:
         return None, 0
-    aligned = _recognizer.alignCrop(img, faces[0])
+    best = faces[np.argmax(faces[:, 2] * faces[:, 3])]     # sabse bada chehra
+    aligned = _recognizer.alignCrop(img, best)
     return _recognizer.feature(aligned), len(faces)
 
 
